@@ -21,8 +21,6 @@ from examples.sac.sac_critic import SacCritic
 from examples.sac.sac_policy import SacPolicy
 from examples.sac.temperature import Temperature
 
-os.environ['CUDA_VISIBLE_DEVICES'] = ''
-
 FLAGS = flags.FLAGS
 
 
@@ -143,9 +141,11 @@ class Trainer:
         return action
 
     def train(self):
+        import os
+        print(os.getcwd())
         logdir = f'{self.env_name}_{time.strftime("%d-%m-%Y_%H-%M-%S")}'
         summary_writer = tensorboard.SummaryWriter(
-            f"/Users/wiktorjurasz/Projects/sim-robotic-arm-rl/logs/{logdir}")
+            f"{self.config.logs_root}/{logdir}")
         (state, _), terminated = self.env.reset(), False
         ep_len = 0
         for i in tqdm.tqdm(range(1, self.config.max_steps + 1),

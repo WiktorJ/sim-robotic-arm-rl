@@ -30,3 +30,4 @@ class Config:
     tqdm = True
     log_interval = 10
     log_videos = True
+    logs_root = '/Users/wiktorjurasz/Projects/sim-robotic-arm-rl/logs'
