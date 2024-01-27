@@ -75,8 +75,8 @@ def _train_step_jit(batch: Batch, rng: jax.Array, policy: TrainState,
 
 
 class Trainer:
-    def __init__(self):
-        self.config = Config()
+    def __init__(self, config):
+        self.config = config
         self.rng = jax.random.PRNGKey(seed=self.config.seed)
         self.rng, env_seed = jax.random.split(self.rng)
         # self.env_name = "InvertedPendulum-v4"
@@ -257,4 +257,4 @@ if __name__ == '__main__':
     # update('jax_platform_name', 'cpu')
     # before execute any computation / allocation
     print(jax.numpy.ones(3).device())  # TFRT_CPU_0
-    Trainer().train()
+    Trainer(Config()).train()
