@@ -1,11 +1,11 @@
 import functools
 from collections import defaultdict
 
-import os
 import jax
-import flax
 import optax
 import tqdm
+import neptune
+from neptune_tensorboard import enable_tensorboard_logging
 import numpy as np
 import gymnasium as gym
 from flax.training.train_state import TrainState
@@ -73,6 +73,7 @@ def _train_step_jit(batch: Batch, rng: jax.Array, policy: TrainState,
 
 class Trainer:
     def __init__(self, config):
+        print(f"running on: {jax.default_backend()}")
         self.config = config
         self.rng = jax.random.PRNGKey(seed=self.config.seed)
         self.rng, env_seed = jax.random.split(self.rng)
@@ -139,7 +140,10 @@ class Trainer:
         return action
 
     def train(self):
-        print(f"running on: {jax.default_backend()}")
+        neptune_run = None
+        if self.config.use_neptune:
+            run_neptune = neptune.init_run()
+            enable_tensorboard_logging(run_neptune)
         logdir = f'{self.config.env_name}_{time.strftime("%d-%m-%Y_%H-%M-%S")}'
         summary_writer = tensorboard.SummaryWriter(
             f"{self.config.logs_root}/{logdir}")
@@ -212,6 +216,9 @@ class Trainer:
                         v,
                         info['total']['timestaps'] if 'total' in info else i)
                 summary_writer.flush()
+
+        if neptune_run:
+            neptune_run.stop()
 
     def _train_step(self, batch: Batch):
         self.rng, self.policy, self.critic, self.target_critic, self.temperature, info = _train_step_jit(
