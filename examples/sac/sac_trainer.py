@@ -23,7 +23,6 @@ from examples.sac.temperature import Temperature
 
 FLAGS = flags.FLAGS
 
-
 def sample_action(seed: jax.Array, policy: TrainState,
                   observations: jnp.ndarray, temperature: float = 1.0):
     dist = policy.apply_fn(policy.params, observations, training=False,
@@ -78,11 +77,10 @@ class Trainer:
         self.rng = jax.random.PRNGKey(seed=self.config.seed)
         self.rng, env_seed = jax.random.split(self.rng)
         # self.env_name = "InvertedPendulum-v4"
-        self.env_name = "FetchReachDense-v2"
-        self.env = gym.make(self.env_name, render_mode='rgb_array',
+        self.env = gym.make(self.config.env_name, render_mode='rgb_array',
                             max_episode_steps=self.config.max_episode_steps)
         self.env.reset()
-        self.eval_env = gym.make(self.env_name, render_mode='rgb_array',
+        self.eval_env = gym.make(self.config.env_name, render_mode='rgb_array',
                                  max_episode_steps=self.config.max_episode_steps)
         self.eval_env.reset()
         action = self.env.action_space.sample()
@@ -141,9 +139,8 @@ class Trainer:
         return action
 
     def train(self):
-        import os
-        print(os.getcwd())
-        logdir = f'{self.env_name}_{time.strftime("%d-%m-%Y_%H-%M-%S")}'
+        print(f"running on: {jax.default_backend()}")
+        logdir = f'{self.config.env_name}_{time.strftime("%d-%m-%Y_%H-%M-%S")}'
         summary_writer = tensorboard.SummaryWriter(
             f"{self.config.logs_root}/{logdir}")
         (state, _), terminated = self.env.reset(), False
@@ -254,7 +251,4 @@ class Trainer:
 
 
 if __name__ == '__main__':
-    # update('jax_platform_name', 'cpu')
-    # before execute any computation / allocation
-    print(jax.numpy.ones(3).device())  # TFRT_CPU_0
     Trainer(Config()).train()

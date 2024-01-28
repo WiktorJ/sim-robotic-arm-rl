@@ -3,6 +3,8 @@ from dataclasses import dataclass
 
 @dataclass
 class Config:
+    env_name = "FetchReachDense-v2"
+
     actor_lr = 3e-4
     critic_lr = 3e-4
     temperature_lr = 3e-4
