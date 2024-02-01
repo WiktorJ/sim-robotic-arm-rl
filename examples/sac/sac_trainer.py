@@ -230,7 +230,7 @@ class Trainer:
 
     def _evaluate(self, log_video):
         stats = defaultdict(list)
-        avg_stats = {}
+        final_stats = {}
         ep_lens = 0
         frames = []
         for _ in range(self.config.num_eval_episodes):
@@ -252,9 +252,12 @@ class Trainer:
             for k in info.keys():
                 stats[k].append(info[k])
         for k, v in stats.items():
-            avg_stats[f"avg_{k}"] = np.mean(v)
-        avg_stats['avg_ep_len'] = int(ep_lens / self.config.num_eval_episodes)
-        return avg_stats, frames
+            final_stats[f"avg_{k}"] = np.mean(v)
+        for k, v in stats.items():
+            if len(v) > 0:
+                final_stats[f"final_{k}"] = v[-1]
+        final_stats['avg_ep_len'] = int(ep_lens / self.config.num_eval_episodes)
+        return final_stats, frames
 
 
 if __name__ == '__main__':
