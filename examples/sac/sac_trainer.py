@@ -1,10 +1,13 @@
 import functools
 from collections import defaultdict
+from typing import Optional
 
 import jax
 import optax
 import tqdm
 import neptune
+from neptune import Run
+from neptune.types import File
 from neptune_tensorboard import enable_tensorboard_logging
 import numpy as np
 import gymnasium as gym
@@ -22,6 +25,7 @@ from examples.sac.sac_policy import SacPolicy
 from examples.sac.temperature import Temperature
 
 FLAGS = flags.FLAGS
+
 
 def sample_action(seed: jax.Array, policy: TrainState,
                   observations: jnp.ndarray, temperature: float = 1.0):
@@ -140,7 +144,7 @@ class Trainer:
         return action
 
     def train(self):
-        neptune_run = None
+        run_neptune: Optional[Run] = None
         if self.config.use_neptune:
             run_neptune = neptune.init_run()
             enable_tensorboard_logging(run_neptune)
@@ -164,6 +168,14 @@ class Trainer:
             state, reward, terminated, truncated, info = self.env.step(
                 action)
             reward = scale_reward(reward)
+
+            for k, v in info.items():
+                summary_writer.scalar(
+                    f'training_step/{k}',
+                    v,
+                    info['total']['timestaps'] if 'total' in info else i)
+            summary_writer.scalar('training/reward', reward, i)
+
             if hasattr(state, '__getitem__'):
                 next_observation = state['observation']
             else:
@@ -174,24 +186,8 @@ class Trainer:
                                       next_observation)
             if terminated or truncated:
                 (state, info_reset), terminated = self.env.reset(), False
-                for k, v in info.items():
-                    summary_writer.scalar(
-                        f'training/{k}',
-                        v,
-                        info['total']['timestaps'] if 'total' in info else i)
-
-                for k, v in info_reset.items():
-                    summary_writer.scalar(
-                        f'training/{k}',
-                        v,
-                        info['total']['timestaps'] if 'total' in info else i)
-
-                if 'is_success' in info:
-                    summary_writer.scalar(
-                        f'training/success',
-                        info['is_success'],
-                        info['total']['timestaps'] if 'total' in info else i)
                 summary_writer.scalar('training/ep_len', ep_len, i)
+                summary_writer.scalar('training/final_reward', reward, i)
                 ep_len = 0
             if i >= self.config.start_training_step:
                 update_info = {}
@@ -209,7 +205,11 @@ class Trainer:
                 eval_stats, frames = self._evaluate(log_video)
                 if self.config.log_videos:
                     for j, frame in enumerate(frames):
-                        summary_writer.image(f"video_{i}", frame, step=j)
+                        if run_neptune:
+                            run_neptune[f'train/images/video_{i}'].append(
+                                File.as_image(frame), step=j)
+                        else:
+                            summary_writer.image(f"video_{i}", frame, step=j)
                 for k, v in eval_stats.items():
                     summary_writer.scalar(
                         f'evaluation/{k}',
@@ -217,8 +217,8 @@ class Trainer:
                         info['total']['timestaps'] if 'total' in info else i)
                 summary_writer.flush()
 
-        if neptune_run:
-            neptune_run.stop()
+        if run_neptune:
+            run_neptune.stop()
 
     def _train_step(self, batch: Batch):
         self.rng, self.policy, self.critic, self.target_critic, self.temperature, info = _train_step_jit(
@@ -247,7 +247,7 @@ class Trainer:
                     action)
                 reward = scale_reward(reward)
                 if log_video:
-                    frames.append(self.eval_env.render())
+                    frames.append(self.eval_env.render() / 255)
                 stats['reward'].append(reward)
             for k in info.keys():
                 stats[k].append(info[k])

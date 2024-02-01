@@ -57,8 +57,8 @@ class SacCritic(nn.Module):
                 'next_action': next_actions.mean(),
                 'next_log_probs': next_log_probs.mean(),
                 'critic_temp': temperature.mean(),
-                'reward': batch.rewards.mean(),
-                'mask': batch.masks.mean()
+                'batch_reward': batch.rewards.mean(),
+                'batch_mask': batch.masks.mean()
             }
 
         grads, info = jax.grad(loss_fn, has_aux=True)(critic.params)

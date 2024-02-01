@@ -17,8 +17,9 @@ def default_init(scale: Optional[float] = jnp.sqrt(2)):
 
 
 def scale_reward(reward, scaling_factor=10):
-    reward_sign = jnp.sign(reward)
-    return reward_sign * jnp.abs((scaling_factor * reward) ** 3)
+    # reward_sign = jnp.sign(reward)
+    # return reward_sign * jnp.abs((scaling_factor * reward) ** 3)
+    return reward
 
 
 class MLP(nn.Module):
