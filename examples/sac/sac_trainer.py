@@ -1,6 +1,7 @@
 import functools
 from collections import defaultdict
 from typing import Optional
+from dataclasses import asdict
 
 import jax
 import optax
@@ -94,7 +95,7 @@ class Trainer:
         action = self.env.action_space.sample()
         state, reward, terminated, truncated, info = self.env.step(
             self.env.action_space.sample())
-        if hasattr(state, '__getitem__'):
+        if hasattr(state, '__getitem__') and 'observation' in state:
             observation = state['observation']
         else:
             observation = state
@@ -136,11 +137,13 @@ class Trainer:
                                              tx=optax.adam(
                                                  learning_rate=self.config.temperature_lr))
 
+        observation_space = self.env.observation_space['observation'] \
+            if hasattr(self.env.observation_space, '__getitem__') \
+               and 'observation' in self.env.observation_space \
+            else self.env.observation_space
+
         self.replay_buffer = ReplayBuffer(self.env.action_space,
-                                          self.env.observation_space[
-                                              'observation'] if hasattr(
-                                              self.env.observation_space,
-                                              '__getitem__') else self.env.observation_space,
+                                          observation_space,
                                           self.config.replay_buffer_capacity)
         self.step = 0
 
@@ -152,7 +155,8 @@ class Trainer:
     def train(self):
         run_neptune: Optional[Run] = None
         if self.config.use_neptune:
-            run_neptune = neptune.init_run()
+            run_neptune = neptune.init_run(tags=[self.config.env_name, "SAC"])
+            run_neptune['parameters'] = asdict(self.config)
             enable_tensorboard_logging(run_neptune)
         logdir = f'{self.config.env_name}_{time.strftime("%d-%m-%Y_%H-%M-%S")}'
         summary_writer = tensorboard.SummaryWriter(
@@ -163,7 +167,7 @@ class Trainer:
                            smoothing=0.1,
                            disable=not self.config.tqdm):
             ep_len += 1
-            if hasattr(state, '__getitem__'):
+            if hasattr(state, '__getitem__') and 'observation' in state:
                 observation = state['observation']
             else:
                 observation = state
@@ -182,7 +186,7 @@ class Trainer:
                     info['total']['timestaps'] if 'total' in info else i)
             summary_writer.scalar('training/reward', reward, i)
 
-            if hasattr(state, '__getitem__'):
+            if hasattr(state, '__getitem__') and 'observation' in state:
                 next_observation = state['observation']
             else:
                 next_observation = state
@@ -245,7 +249,7 @@ class Trainer:
                 self.eval_env.reset(), False, False
             while not (terminated or truncated):
                 ep_lens += 1
-                if hasattr(state, '__getitem__'):
+                if hasattr(state, '__getitem__') and 'observation' in state:
                     observation = state['observation']
                 else:
                     observation = state
