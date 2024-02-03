@@ -44,11 +44,13 @@ def sample_random_action(env):
 
 
 @functools.partial(jax.jit,
-                   static_argnames=('update_critic',))
+                   static_argnames=(
+                           'update_critic', 'entropy', 'fixed_temperature'))
 def _train_step_jit(batch: Batch, rng: jax.Array, policy: TrainState,
                     critic: TrainState, target_critic: TrainState,
                     gamma: float, temperature: TrainState, tau: float,
-                    update_critic: bool, entropy: float):
+                    update_critic: bool, entropy: float,
+                    fixed_temperature: bool):
     rng, seed = jax.random.split(rng)
     new_critic, critic_info = SacCritic.update(seed, batch, policy,
                                                critic,
@@ -68,7 +70,8 @@ def _train_step_jit(batch: Batch, rng: jax.Array, policy: TrainState,
                                                temperature)
     new_temperature, temp_info = Temperature.update(temperature,
                                                     policy_info['action_log'],
-                                                    entropy)
+                                                    entropy,
+                                                    fixed_temperature)
     return rng, new_policy, new_critic, new_target_critic, new_temperature, {
         **policy_info,
         **critic_info,
@@ -96,6 +99,7 @@ class Trainer:
         else:
             observation = state
         self.action_dim = action.shape[-1]
+        self.target_entropy = -self.action_dim * self.config.target_entropy_multiplier
 
         self.rng, critic_seed, policy_seed, temperature_seed = jax.random.split(
             self.rng, 4)
@@ -123,7 +127,9 @@ class Trainer:
                                                tx=optax.adam(
                                                    learning_rate=self.config.critic_lr))
 
-        temperature_def = Temperature(self.config.temperature)
+        temperature_def = Temperature(
+            init_temperature=self.config.temperature,
+            fixed_temperature=self.config.fixed_temperature)
         temperature_params = temperature_def.init(temperature_seed)
         self.temperature = TrainState.create(apply_fn=temperature_def.apply,
                                              params=temperature_params,
@@ -225,7 +231,8 @@ class Trainer:
             batch, self.rng, self.policy, self.critic,
             self.target_critic, self.config.gamma, self.temperature,
             self.config.tau,
-            self.step % self.config.target_update_period == 0, -self.action_dim)
+            self.step % self.config.target_update_period == 0,
+            self.target_entropy, self.config.fixed_temperature)
         return info
 
     def _evaluate(self, log_video):

@@ -40,9 +40,9 @@ class SacCritic(nn.Module):
         tq1, tq2 = target_critic.apply_fn(target_critic.params,
                                           batch.next_observations, next_actions)
         m_tq = jnp.minimum(tq1, tq2)
-        temperature = temperature.apply_fn(temperature.params)
+        temp = temperature.apply_fn(temperature.params)
         targets = batch.rewards + gamma * batch.masks * (
-                m_tq - temperature * next_log_probs)
+                m_tq - temp * next_log_probs)
 
         def loss_fn(params: Params):
             q1, q2 = critic.apply_fn(params, batch.observations,
@@ -56,7 +56,6 @@ class SacCritic(nn.Module):
                 'm_tq': m_tq.mean(),
                 'next_action': next_actions.mean(),
                 'next_log_probs': next_log_probs.mean(),
-                'critic_temp': temperature.mean(),
                 'batch_reward': batch.rewards.mean(),
                 'batch_mask': batch.masks.mean()
             }

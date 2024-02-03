@@ -13,14 +13,15 @@ class Config:
     tau = 0.005
     target_update_period = 1
     state_dependent_std = False
-
+    target_entropy_multiplier = 1
+    fixed_temperature = True
     temperature = 1
 
     seed = 123
 
     max_episode_steps = 100
     replay_buffer_capacity = 100000
-    max_steps = 6000
+    max_steps = 10000
     start_training_step = 2000
     update_steps = 1
     batch_size = 2048
@@ -34,4 +35,4 @@ class Config:
     log_videos = True
     logs_root = '/Users/wiktorjurasz/Projects/sim-robotic-arm-rl/logs'
 
-    use_neptune=True
+    use_neptune=False
