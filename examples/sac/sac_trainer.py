@@ -3,6 +3,7 @@ from collections import defaultdict
 from typing import Optional
 from dataclasses import asdict
 
+import gymnasium
 import jax
 import optax
 import tqdm
@@ -138,8 +139,8 @@ class Trainer:
                                                  learning_rate=self.config.temperature_lr))
 
         observation_space = self.env.observation_space['observation'] \
-            if hasattr(self.env.observation_space, '__getitem__') \
-               and 'observation' in self.env.observation_space \
+            if isinstance(self.env.observation_space,
+                          gymnasium.spaces.dict.Dict) \
             else self.env.observation_space
 
         self.replay_buffer = ReplayBuffer(self.env.action_space,

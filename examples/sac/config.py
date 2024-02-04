@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Config:
-    env_name: str = "InvertedPendulum-v4"
+    env_name: str = "FetchReachDense-v2"
 
     actor_lr: float = 3e-4
     critic_lr: float = 3e-4
@@ -35,4 +35,4 @@ class Config:
     log_videos: bool = True
     logs_root: str = '/Users/wiktorjurasz/Projects/sim-robotic-arm-rl/logs'
 
-    use_neptune: bool = True
+    use_neptune: bool = False
