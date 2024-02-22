@@ -11,6 +11,7 @@ import neptune
 from neptune import Run
 from neptune.types import File
 from neptune_tensorboard import enable_tensorboard_logging
+from neptune.utils import stringify_unsupported
 import numpy as np
 import gymnasium as gym
 from flax.training.train_state import TrainState
@@ -157,7 +158,8 @@ class Trainer:
         run_neptune: Optional[Run] = None
         if self.config.use_neptune:
             run_neptune = neptune.init_run(tags=[self.config.env_name, "SAC"])
-            run_neptune['parameters'] = asdict(self.config)
+            run_neptune['parameters'] = stringify_unsupported(
+                asdict(self.config))
             enable_tensorboard_logging(run_neptune)
         logdir = f'{self.config.env_name}_{time.strftime("%d-%m-%Y_%H-%M-%S")}'
         summary_writer = tensorboard.SummaryWriter(
