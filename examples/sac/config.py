@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Config:
-    env_name: str = "Walker2d-v4"
+    env_name: str = "Pusher-v4"
 
     actor_lr: float = 3e-4
     critic_lr: float = 3e-4
