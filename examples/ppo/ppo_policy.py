@@ -79,6 +79,8 @@ class PpoPolicy(nn.Module):
                 'action_log': log_probs.mean(),
                 'ratio': ratio.mean(),
                 'ratio_clip': ratio_clip.mean(),
+                'advantages': advantages.mean(),
+                'old_action_log': old_log_probs.mean()
             }
 
         grads, info = jax.grad(loss_fn, has_aux=True)(policy.params)
