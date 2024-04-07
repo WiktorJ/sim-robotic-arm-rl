@@ -120,8 +120,7 @@ class RolloutBuffer:
         for batch in env_rollout_buffer.get(batch_size):
             dist = policy.apply_fn(policy.params, batch.observations,
                                    training=True)
-            actions = dist.sample(seed=seed)
-            log_probs = dist.log_prob(actions)
+            log_probs = dist.log_prob(batch.actions)
             rollout_buffer.insert(
                 batch.observations, batch.actions, batch.rewards, batch.masks,
                 log_probs, batch_size

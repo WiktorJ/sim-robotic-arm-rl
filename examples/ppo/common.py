@@ -12,8 +12,21 @@ import flax
 import flax.linen as nn
 import jax.numpy as jnp
 import numpy as np
+from tensorflow_probability.substrates import jax as tfp
+
+tfb = tfp.bijectors
 
 Params = flax.core.FrozenDict[str, Any]
+
+
+class StableTanH(tfb.Tanh):
+    __NEGATIVE_INF_SUB = -0.999_999
+    __POSITIVE_INF_SUB = 0.999_999
+
+    def _inverse(self, y):
+        return jnp.nan_to_num(super()._inverse(jnp.clip(y, -1, 1)), nan=jnp.nan,
+                              posinf=self.__POSITIVE_INF_SUB,
+                              neginf=self.__NEGATIVE_INF_SUB)
 
 
 def default_init(scale: Optional[float] = jnp.sqrt(2)):

@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from tensorflow_probability.substrates import jax as tfp
 from flax.training.train_state import TrainState
 
-from examples.ppo.common import MLP, default_init, Params
+from examples.ppo.common import MLP, default_init, Params, StableTanH
 
 tfd = tfp.distributions
 tfb = tfp.bijectors
@@ -41,25 +41,27 @@ class PpoPolicy(nn.Module):
 
         log_std = jnp.clip(log_std, self.log_std_min, self.log_std_max)
         if not self.tanh_squash_distribution:
-            mean = nn.tanh(mean)
+            mean_s = nn.tanh(mean)
+        else:
+            mean_s = mean
 
-        dist = tfd.MultivariateNormalDiag(loc=mean,
+        dist = tfd.MultivariateNormalDiag(loc=mean_s,
                                           scale_diag=jnp.exp(
                                               log_std) * temperature)
         if self.tanh_squash_distribution:
             return tfd.TransformedDistribution(distribution=dist,
-                                               bijector=tfb.Tanh())
+                                               bijector=StableTanH())
         return dist
 
     @staticmethod
-    def update(seed: jax.Array, observations: jnp.ndarray,
+    def update(seed: jax.Array, observations: jnp.ndarray, actions: jnp.ndarray,
                advantages: jnp.ndarray,
                old_log_probs: jnp.ndarray, policy: TrainState,
                epsilon: float, entropy_coef: float) -> Tuple[
         TrainState, Mapping]:
         def loss_fn(params: Params):
             dist = policy.apply_fn(params, observations, training=True)
-            actions = dist.sample(seed=seed)
+            # actions = dist.sample(seed=seed)
             log_probs = dist.log_prob(actions)
 
             ratio = jnp.exp(log_probs - old_log_probs)
@@ -82,6 +84,11 @@ class PpoPolicy(nn.Module):
                 'advantages': advantages.mean(),
                 'old_action_log': old_log_probs.mean()
             }
+
+        def check_for_nan(x):
+            if isinstance(x, dict):
+                return any([check_for_nan(v) for k, v in x.items()])
+            return jnp.any(jnp.isnan(x))
 
         grads, info = jax.grad(loss_fn, has_aux=True)(policy.params)
         return policy.apply_gradients(grads=grads), info

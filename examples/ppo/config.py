@@ -4,7 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class Config:
     env_name: str = "InvertedPendulum-v4"
-    seed: int = 123
+    seed: int = 1234
 
     hidden_dims: tuple = (256, 256)
     lr: float = 3e-4
@@ -13,12 +13,13 @@ class Config:
     epsilon: float = 0.2
     entropy_coef: float = 0.01
     dropout_rate: float = None
+    state_dependent_std: bool = False
 
     epochs: int = 10
-    n_envs: int = 16
+    n_envs: int = 1
     rollout_length: int = 128
 
-    max_steps: int = 1_000
+    max_steps: int = 3_000_000
     batch_size: int = 64
     max_episode_steps: int = 128
 
@@ -31,4 +32,4 @@ class Config:
     log_videos: bool = True
     logs_root: str = '/Users/wiktorjurasz/Projects/sim-robotic-arm-rl/logs'
 
-    use_neptune: bool = False
+    use_neptune: bool = True
