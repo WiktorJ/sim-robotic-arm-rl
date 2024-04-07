@@ -141,6 +141,7 @@ class Trainer:
             render_mode="rgb_array",
             max_episode_steps=self.config.max_episode_steps,
             num_envs=config.n_envs,
+            asynchronous=config.asynchronous
         )
         self.envs.reset(seed=env_seeds)
         self.eval_env = gym.make(

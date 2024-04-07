@@ -5,6 +5,7 @@ from dataclasses import dataclass
 class Config:
     env_name: str = "InvertedPendulum-v4"
     seed: int = 1234
+    asynchronous = True
 
     hidden_dims: tuple = (256, 256)
     lr: float = 3e-4
