@@ -23,21 +23,21 @@ class PpoPolicy(nn.Module):
     tanh_squash_distribution: bool = True
 
     @nn.compact
-    def __call__(self, obs: jnp.ndarray, temperature: float = 1.0,
-                 training: bool = False) -> tfd.Distribution:
-        outputs = MLP(self.hidden_dims, activate_final=True,
-                      dropout_rate=self.dropout_rate)(obs, training=training)
-        mean = nn.Dense(self.action_dim,
-                        kernel_init=default_init(self.final_fc_init_scale))(
-            outputs)
+    def __call__(
+        self, obs: jnp.ndarray, temperature: float = 1.0, training: bool = False
+    ) -> tfd.Distribution:
+        outputs = MLP(
+            self.hidden_dims, activate_final=True, dropout_rate=self.dropout_rate
+        )(obs, training=training)
+        mean = nn.Dense(
+            self.action_dim, kernel_init=default_init(self.final_fc_init_scale)
+        )(outputs)
         if self.state_dependent_std:
-            log_std = nn.Dense(self.action_dim,
-                               kernel_init=default_init(
-                                   self.final_fc_init_scale))(
-                outputs)
+            log_std = nn.Dense(
+                self.action_dim, kernel_init=default_init(self.final_fc_init_scale)
+            )(outputs)
         else:
-            log_std = self.param('log_std', nn.initializers.zeros,
-                                 (self.action_dim,))
+            log_std = self.param("log_std", nn.initializers.zeros, (self.action_dim,))
 
         log_std = jnp.clip(log_std, self.log_std_min, self.log_std_max)
         if not self.tanh_squash_distribution:
@@ -45,20 +45,24 @@ class PpoPolicy(nn.Module):
         else:
             mean_s = mean
 
-        dist = tfd.MultivariateNormalDiag(loc=mean_s,
-                                          scale_diag=jnp.exp(
-                                              log_std) * temperature)
+        dist = tfd.MultivariateNormalDiag(
+            loc=mean_s, scale_diag=jnp.exp(log_std) * temperature
+        )
         if self.tanh_squash_distribution:
-            return tfd.TransformedDistribution(distribution=dist,
-                                               bijector=StableTanH())
+            return tfd.TransformedDistribution(distribution=dist, bijector=StableTanH())
         return dist
 
     @staticmethod
-    def update(seed: jax.Array, observations: jnp.ndarray, actions: jnp.ndarray,
-               advantages: jnp.ndarray,
-               old_log_probs: jnp.ndarray, policy: TrainState,
-               epsilon: float, entropy_coef: float) -> Tuple[
-        TrainState, Mapping]:
+    def update(
+        seed: jax.Array,
+        observations: jnp.ndarray,
+        actions: jnp.ndarray,
+        advantages: jnp.ndarray,
+        old_log_probs: jnp.ndarray,
+        policy: TrainState,
+        epsilon: float,
+        entropy_coef: float,
+    ) -> Tuple[TrainState, Mapping]:
         def loss_fn(params: Params):
             dist = policy.apply_fn(params, observations, training=True)
             # actions = dist.sample(seed=seed)
@@ -71,18 +75,20 @@ class PpoPolicy(nn.Module):
             # entropy = jnp.mean(dist.entropy())
             entropy = jnp.mean(-log_probs)
             entropy_loss = entropy_coef * entropy
-            policy_loss = jnp.minimum(ratio * advantages,
-                                      ratio_clip * advantages).mean()
-            loss = policy_loss + entropy_coef * entropy_loss
+            policy_loss1 = ratio * advantages
+            policy_loss2 = ratio_clip * advantages
+            policy_loss = jnp.minimum(policy_loss1, policy_loss2).mean()
+            loss = -(policy_loss + entropy_coef * entropy_loss)
             return loss, {
-                'full_policy_loss': loss,
-                'policy_loss': policy_loss,
-                'entropy_loss': entropy_loss,
-                'action_log': log_probs.mean(),
-                'ratio': ratio.mean(),
-                'ratio_clip': ratio_clip.mean(),
-                'advantages': advantages.mean(),
-                'old_action_log': old_log_probs.mean()
+                "full_policy_loss": loss,
+                "policy_loss": policy_loss,
+                "entropy_loss": entropy_loss,
+                "action_log": log_probs.mean(),
+                "ratio": ratio.mean(),
+                "ratio_clip": ratio_clip.mean(),
+                "advantages": advantages.mean(),
+                "old_action_log": old_log_probs.mean(),
+                "actions": actions.mean(),
             }
 
         def check_for_nan(x):

@@ -15,6 +15,7 @@ class Config:
     entropy_coef: float = 0.01
     dropout_rate: float = None
     state_dependent_std: bool = False
+    precalc_advantages: bool = True
 
     epochs: int = 10
     n_envs: int = 1

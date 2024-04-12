@@ -15,7 +15,13 @@ from neptune import Run
 from neptune.types import File
 from neptune_tensorboard import enable_tensorboard_logging
 from neptune.utils import stringify_unsupported
-from examples.ppo.common import MLP, Params, get_observations
+from examples.ppo.common import (
+    MLP,
+    Params,
+    get_observations,
+    calculate_advantage,
+    calculate_values,
+)
 from flax.training.train_state import TrainState
 import jax.numpy as jnp
 
@@ -29,6 +35,7 @@ from examples.ppo.rollout_buffer import (
 from flax.metrics import tensorboard
 
 
+@functools.partial(jax.jit, static_argnames=("temperature"))
 def sample_action(
     seed: jax.Array,
     policy: TrainState,
@@ -40,30 +47,6 @@ def sample_action(
     )
     rng, seed = jax.random.split(seed)
     return rng, dist.sample(seed=seed)
-
-
-def _calculate_advantage(
-    values: jnp.ndarray,
-    rewards: jnp.ndarray,
-    masks: jnp.ndarray,
-    gamma: float,
-    lambda_: float,
-) -> jnp.ndarray:
-    def adv_rec(
-        next_adv: jnp.floating, delta_mask: jnp.ndarray
-    ) -> Tuple[jnp.floating, jnp.floating]:
-        adv = delta_mask[0] + gamma * lambda_ * delta_mask[1] * next_adv
-        return adv, adv
-
-    # masks[i] == 0 the **next** state (i.e. observations[i+1]) terminal.
-    deltas = jax.vmap(
-        lambda reward, val, val1, term: reward + gamma * val1 * term - val
-    )(rewards, values, jnp.append(values, 0)[1:], masks)
-
-    # Return just the list, carry is irrelevant at this point.
-    return jax.lax.scan(
-        adv_rec, 0., jnp.flip(jnp.stack((deltas, masks), axis=-1), axis=0)
-    )[1]
 
 
 def update_value_function(
@@ -83,10 +66,16 @@ def update_value_function(
     return value_function.apply_gradients(grads=grads), info
 
 
-@functools.partial(jax.jit,
-                   static_argnames=(
-                           'gamma', 'lambda_', 'epsilon',
-                           'entropy_coef'))
+@functools.partial(
+    jax.jit,
+    static_argnames=(
+        "gamma",
+        "lambda_",
+        "epsilon",
+        "entropy_coef",
+        "precalc_advantages",
+    ),
+)
 def train_step_jit(
     batch: BatchWithProbs,
     seed: jax.Array,
@@ -96,19 +85,16 @@ def train_step_jit(
     lambda_: float,
     epsilon: float,
     entropy_coef: float,
+    precalc_advantages: bool = True,
 ):
-    # TODO: Perhaps advantages should also be calc only once using old
-    #  value_f and reused during each epoch.
-    values = jnp.squeeze(
-        jax.vmap(
-            lambda obs: value_function.apply_fn(
-                value_function.params, obs, training=True
-            )
-        )(batch.observations)
-    )
-    advantages = _calculate_advantage(
-        values, batch.rewards, batch.masks, gamma, lambda_
-    )
+    values = calculate_values(value_function, batch.observations)
+
+    if precalc_advantages:
+        advantages = batch.advantages
+    else:
+        advantages = calculate_advantage(
+            values, batch.rewards, batch.masks, gamma, lambda_
+        )
 
     policy, policy_info = PpoPolicy.update(
         seed,
@@ -141,7 +127,7 @@ class Trainer:
             render_mode="rgb_array",
             max_episode_steps=self.config.max_episode_steps,
             num_envs=config.n_envs,
-            asynchronous=config.asynchronous
+            asynchronous=config.asynchronous,
         )
         self.envs.reset(seed=env_seeds)
         self.eval_env = gym.make(
@@ -212,7 +198,10 @@ class Trainer:
             self.config.rollout_length,
             self.config.n_envs,
         )
-
+        # TODO: This might be misleading(?)
+        # Just look at one representative env.
+        train_ep_length = 0
+        train_reward = 0
         for i in tqdm.tqdm(
             range(1, self.config.max_steps + 1),
             smoothing=0.1,
@@ -228,6 +217,23 @@ class Trainer:
                 env_rollout_buffer.insert(
                     observations, actions, rewards, terminations, truncations
                 )
+
+                truncated_or_terminated = truncations[0] or terminations[0]
+                train_ep_length += int(not truncated_or_terminated)
+                train_reward += rewards[0]
+                if truncated_or_terminated:
+                    summary_writer.scalar(
+                        f"training/ep_len",
+                        train_ep_length,
+                        infos["total"]["timestaps"] if "total" in infos else i,
+                    )
+                    summary_writer.scalar(
+                        f"training/reward",
+                        train_reward,
+                        infos["total"]["timestaps"] if "total" in infos else i,
+                    )
+                    train_ep_length = 0
+                    train_reward = 0
 
             infos = self._train_step(env_rollout_buffer)
             for info in infos:
@@ -282,6 +288,7 @@ class Trainer:
                 stats[k].append(info[k])
         for k, v in stats.items():
             final_stats[f"avg_{k}"] = np.mean(v)
+            final_stats[f"total_{k}"] = np.sum(v)
         for k, v in stats.items():
             if len(v) > 0:
                 final_stats[f"final_{k}"] = v[-1]
@@ -291,7 +298,12 @@ class Trainer:
     def _train_step(self, env_rollout_buffer: EnvRolloutBuffer):
         self.rng, seed = jax.random.split(self.rng)
         rollout_buffer = RolloutBuffer.create_from_env_rollouts(
-            env_rollout_buffer, self.policy, seed, self.config.batch_size
+            env_rollout_buffer,
+            self.policy,
+            self.value_function,
+            self.config.gamma,
+            self.config.lambda_,
+            self.config.batch_size,
         )
         infos = []
         for epoch in range(self.config.epochs):
@@ -305,6 +317,7 @@ class Trainer:
                     self.config.lambda_,
                     self.config.epsilon,
                     self.config.entropy_coef,
+                    self.config.precalc_advantages,
                 )
                 infos.append(info)
         return infos
