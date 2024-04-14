@@ -35,7 +35,7 @@ from examples.ppo.rollout_buffer import (
 from flax.metrics import tensorboard
 
 
-# @functools.partial(jax.jit, static_argnames=("temperature"))
+@functools.partial(jax.jit, static_argnames=("temperature"))
 def sample_action(
     seed: jax.Array,
     policy: TrainState,
@@ -66,17 +66,17 @@ def update_value_function(
     return value_function.apply_gradients(grads=grads), info
 
 
-# @functools.partial(
-#     jax.jit,
-#     static_argnames=(
-#         "gamma",
-#         "lambda_",
-#         "epsilon",
-#         "entropy_coef",
-#         "precalc_advantages",
-#         "use_combined_loss",
-#     ),
-# )
+@functools.partial(
+    jax.jit,
+    static_argnames=(
+        "gamma",
+        "lambda_",
+        "epsilon",
+        "entropy_coef",
+        "precalc_advantages",
+        "use_combined_loss",
+    ),
+)
 def train_step_jit(
     batch: BatchWithProbs,
     policy: TrainState,
