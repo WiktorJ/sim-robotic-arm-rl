@@ -1,4 +1,4 @@
-from typing import Sequence, Optional, Tuple, Mapping
+from typing import Sequence, Optional, Tuple, Mapping, Union
 
 import flax.linen as nn
 import jax
@@ -54,15 +54,21 @@ class PpoPolicy(nn.Module):
 
     @staticmethod
     def update(
-        seed: jax.Array,
         observations: jnp.ndarray,
         actions: jnp.ndarray,
         advantages: jnp.ndarray,
         old_log_probs: jnp.ndarray,
         policy: TrainState,
+        prev_values: jnp.ndarray,
+        value_function: TrainState,
+        combined_state: TrainState,
+        use_combined_loss: bool,
         epsilon: float,
         entropy_coef: float,
-    ) -> Tuple[TrainState, Mapping]:
+    ) -> Union[
+        Tuple[TrainState, Mapping], Tuple[TrainState, TrainState, TrainState, Mapping]
+    ]:
+
         def loss_fn(params: Params):
             dist = policy.apply_fn(params, observations, training=True)
             # actions = dist.sample(seed=seed)
@@ -75,10 +81,13 @@ class PpoPolicy(nn.Module):
             # entropy = jnp.mean(dist.entropy())
             entropy = jnp.mean(-log_probs)
             entropy_loss = entropy_coef * entropy
+
             policy_loss1 = ratio * advantages
             policy_loss2 = ratio_clip * advantages
             policy_loss = jnp.minimum(policy_loss1, policy_loss2).mean()
+
             loss = -(policy_loss + entropy_coef * entropy_loss)
+
             return loss, {
                 "full_policy_loss": loss,
                 "policy_loss": policy_loss,
@@ -91,10 +100,37 @@ class PpoPolicy(nn.Module):
                 "actions": actions.mean(),
             }
 
-        def check_for_nan(x):
-            if isinstance(x, dict):
-                return any([check_for_nan(v) for k, v in x.items()])
-            return jnp.any(jnp.isnan(x))
+        def combined_loss_fn(params: Params, targets: jnp.ndarray):
+            policy_params, value_function_params = params
+            policy_loss, policy_info = loss_fn(policy_params)
+            values = value_function.apply_fn(
+                value_function_params, observations, training=True
+            )
+            value_loss = ((values - targets) ** 2).mean()
+            loss = policy_loss + value_loss
+            return loss, {
+                **policy_info,
+                "value_function_loss": value_loss,
+                "values": values.mean(),
+            }
+
+        if use_combined_loss:
+            grads, info = jax.grad(combined_loss_fn, has_aux=True)(
+                combined_state.params, advantages + prev_values
+            )
+            new_combined_state = combined_state.apply_gradients(grads=grads)
+            new_policy = policy.replace(
+                step=policy.step + 1, params=new_combined_state.params[0]
+            )
+            new_value_function = value_function.replace(
+                step=value_function.step + 1, params=new_combined_state.params[1]
+            )
+            return (
+                new_policy,
+                new_value_function,
+                new_combined_state,
+                info,
+            )
 
         grads, info = jax.grad(loss_fn, has_aux=True)(policy.params)
         return policy.apply_gradients(grads=grads), info

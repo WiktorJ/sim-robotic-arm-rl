@@ -16,6 +16,7 @@ class Config:
     dropout_rate: float = None
     state_dependent_std: bool = False
     precalc_advantages: bool = True
+    use_combined_loss: bool = True
 
     epochs: int = 10
     n_envs: int = 1
@@ -32,6 +33,6 @@ class Config:
     tqdm: bool = True
     log_interval: int = 10
     log_videos: bool = True
-    logs_root: str = '/Users/wiktorjurasz/Projects/sim-robotic-arm-rl/logs'
+    logs_root: str = "/Users/wiktorjurasz/Projects/sim-robotic-arm-rl/logs"
 
     use_neptune: bool = True

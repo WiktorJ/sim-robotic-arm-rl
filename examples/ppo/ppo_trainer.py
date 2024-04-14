@@ -1,7 +1,7 @@
 import functools
 import time
 from collections import defaultdict
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Mapping
 from dataclasses import asdict
 
 import jax
@@ -35,7 +35,7 @@ from examples.ppo.rollout_buffer import (
 from flax.metrics import tensorboard
 
 
-@functools.partial(jax.jit, static_argnames=("temperature"))
+# @functools.partial(jax.jit, static_argnames=("temperature"))
 def sample_action(
     seed: jax.Array,
     policy: TrainState,
@@ -66,27 +66,29 @@ def update_value_function(
     return value_function.apply_gradients(grads=grads), info
 
 
-@functools.partial(
-    jax.jit,
-    static_argnames=(
-        "gamma",
-        "lambda_",
-        "epsilon",
-        "entropy_coef",
-        "precalc_advantages",
-    ),
-)
+# @functools.partial(
+#     jax.jit,
+#     static_argnames=(
+#         "gamma",
+#         "lambda_",
+#         "epsilon",
+#         "entropy_coef",
+#         "precalc_advantages",
+#         "use_combined_loss",
+#     ),
+# )
 def train_step_jit(
     batch: BatchWithProbs,
-    seed: jax.Array,
     policy: TrainState,
     value_function: TrainState,
+    combined_state: TrainState,
     gamma: float,
     lambda_: float,
     epsilon: float,
     entropy_coef: float,
     precalc_advantages: bool = True,
-):
+    use_combined_loss: bool = False,
+) -> Tuple[TrainState, TrainState, TrainState, Mapping]:
     values = calculate_values(value_function, batch.observations)
 
     if precalc_advantages:
@@ -96,20 +98,39 @@ def train_step_jit(
             values, batch.rewards, batch.masks, gamma, lambda_
         )
 
-    policy, policy_info = PpoPolicy.update(
-        seed,
-        batch.observations,
-        batch.actions,
-        advantages,
-        batch.log_probs,
-        policy,
-        epsilon,
-        entropy_coef,
-    )
-    value_function, value_info = update_value_function(
-        values, advantages, batch.observations, value_function
-    )
-    return policy, value_function, {**policy_info, **value_info}
+    if not use_combined_loss:
+        policy, policy_info = PpoPolicy.update(
+            observations=batch.observations,
+            actions=batch.actions,
+            advantages=advantages,
+            old_log_probs=batch.log_probs,
+            policy=policy,
+            prev_values=values,
+            value_function=value_function,
+            combined_state=combined_state,
+            use_combined_loss=use_combined_loss,
+            epsilon=epsilon,
+            entropy_coef=entropy_coef,
+        )
+        value_function, value_info = update_value_function(
+            values, advantages, batch.observations, value_function
+        )
+        info = {**policy_info, **value_info}
+    else:
+        policy, value_function, combined_state, info = PpoPolicy.update(
+            observations=batch.observations,
+            actions=batch.actions,
+            advantages=advantages,
+            old_log_probs=batch.log_probs,
+            policy=policy,
+            prev_values=values,
+            value_function=value_function,
+            combined_state=combined_state,
+            use_combined_loss=use_combined_loss,
+            epsilon=epsilon,
+            entropy_coef=entropy_coef,
+        )
+    return policy, value_function, combined_state, info
 
 
 class Trainer:
@@ -166,6 +187,12 @@ class Trainer:
         self.policy = TrainState.create(
             apply_fn=policy_def.apply,
             params=policy_params,
+            tx=optax.adam(learning_rate=self.config.lr),
+        )
+
+        self.combined_state = TrainState.create(
+            apply_fn=lambda _: None,
+            params=(policy_params, value_function_params),
             tx=optax.adam(learning_rate=self.config.lr),
         )
 
@@ -308,16 +335,19 @@ class Trainer:
         infos = []
         for epoch in range(self.config.epochs):
             for batch in rollout_buffer.get(self.config.batch_size):
-                self.policy, self.value_function, info = train_step_jit(
-                    batch,
-                    seed,
-                    self.policy,
-                    self.value_function,
-                    self.config.gamma,
-                    self.config.lambda_,
-                    self.config.epsilon,
-                    self.config.entropy_coef,
-                    self.config.precalc_advantages,
+                self.policy, self.value_function, self.combined_state, info = (
+                    train_step_jit(
+                        batch,
+                        self.policy,
+                        self.value_function,
+                        self.combined_state,
+                        self.config.gamma,
+                        self.config.lambda_,
+                        self.config.epsilon,
+                        self.config.entropy_coef,
+                        self.config.precalc_advantages,
+                        self.config.use_combined_loss
+                    )
                 )
                 infos.append(info)
         return infos

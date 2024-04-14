@@ -58,7 +58,7 @@ def get_observations(states: Sequence[Dict | Iterable]) -> Iterable[Iterable]:
     return states
 
 
-@functools.partial(jax.jit, static_argnames=("gamma", "lambda_"))
+# @functools.partial(jax.jit, static_argnames=("gamma", "lambda_"))
 def calculate_advantage(
     values: jnp.ndarray,
     rewards: jnp.ndarray,
@@ -83,7 +83,7 @@ def calculate_advantage(
     )[1]
 
 
-@jax.jit
+# @jax.jit
 def calculate_values(
     value_function: TrainState, observations: jnp.ndarray
 ) -> jnp.ndarray:
