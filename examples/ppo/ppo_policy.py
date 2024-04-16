@@ -79,14 +79,15 @@ class PpoPolicy(nn.Module):
             # We cannot use dist.entropy, because there is no analytical
             # solution for tanh squashed distribution
             # entropy = jnp.mean(dist.entropy())
-            entropy = jnp.mean(-log_probs)
+            entropy = jnp.mean(-jnp.exp(log_probs) * log_probs)
             entropy_loss = entropy_coef * entropy
 
-            policy_loss1 = ratio * advantages
-            policy_loss2 = ratio_clip * advantages
+            advantages_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            policy_loss1 = ratio * advantages_norm
+            policy_loss2 = ratio_clip * advantages_norm
             policy_loss = jnp.minimum(policy_loss1, policy_loss2).mean()
 
-            loss = -(policy_loss + entropy_coef * entropy_loss)
+            loss = -(policy_loss + entropy_loss)
 
             return loss, {
                 "full_policy_loss": loss,
@@ -96,6 +97,7 @@ class PpoPolicy(nn.Module):
                 "ratio": ratio.mean(),
                 "ratio_clip": ratio_clip.mean(),
                 "advantages": advantages.mean(),
+                "advantages_norm": advantages_norm.mean(),
                 "old_action_log": old_log_probs.mean(),
                 "actions": actions.mean(),
             }
@@ -106,7 +108,7 @@ class PpoPolicy(nn.Module):
             values = value_function.apply_fn(
                 value_function_params, observations, training=True
             )
-            value_loss = ((values - targets) ** 2).mean()
+            value_loss = 0.5 * ((values - targets) ** 2).mean()
             loss = policy_loss + value_loss
             return loss, {
                 **policy_info,

@@ -5,7 +5,7 @@ from typing import Generator
 
 import jax
 from flax.training.train_state import TrainState
-from examples.ppo.common import calculate_values, calculate_advantage
+from examples.ppo.common import calculate_values, calculate_advantage2
 
 import jax.numpy as jnp
 import numpy as np
@@ -141,7 +141,7 @@ class RolloutBuffer:
             log_probs = dist.log_prob(batch.actions)
 
             values = calculate_values(values_function, batch.observations)
-            advantages = calculate_advantage(
+            advantages = calculate_advantage2(
                 values, batch.rewards, batch.masks, gamma, lambda_
             )
             rollout_buffer.insert(

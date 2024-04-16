@@ -30,12 +30,14 @@ class StableTanH(tfb.Tanh):
     __POSITIVE_INF_SUB = 0.999_999
 
     def _inverse(self, y):
-        return jnp.nan_to_num(
-            super()._inverse(jnp.clip(y, -1, 1)),
-            nan=jnp.nan,
-            posinf=self.__POSITIVE_INF_SUB,
-            neginf=self.__NEGATIVE_INF_SUB,
-        )
+        x = super()._inverse(jnp.clip(y, self.__NEGATIVE_INF_SUB, self.__POSITIVE_INF_SUB))
+        return x
+        # return jnp.nan_to_num(
+        #     x,
+        #     nan=jnp.nan,
+        #     posinf=self.__POSITIVE_INF_SUB,
+        #     neginf=self.__NEGATIVE_INF_SUB,
+        # )
 
 
 def default_init(scale: Optional[float] = jnp.sqrt(2)):
@@ -81,6 +83,51 @@ def calculate_advantage(
     return jax.lax.scan(
         adv_rec, 0.0, jnp.flip(jnp.stack((deltas, masks), axis=-1), axis=0)
     )[1]
+
+
+@jax.jit
+# @functools.partial(jax.vmap, in_axes=(1, 1, 1, None, None), out_axes=1)
+def calculate_advantage2(
+    values: jnp.ndarray,
+    rewards: jnp.ndarray,
+    terminal_masks: jnp.ndarray,
+    discount: float,
+    gae_param: float,
+):
+    """Use Generalized Advantage Estimation (GAE) to compute advantages.
+
+    As defined by eqs. (11-12) in PPO paper arXiv: 1707.06347. Implementation uses
+    key observation that A_{t} = delta_t + gamma*lambda*A_{t+1}.
+
+    Args:
+      rewards: array shaped (actor_steps, num_agents), rewards from the game
+      terminal_masks: array shaped (actor_steps, num_agents), zeros for terminal
+                      and ones for non-terminal states
+      values: array shaped (actor_steps, num_agents), values estimated by critic
+      discount: RL discount usually denoted with gamma
+      gae_param: GAE parameter usually denoted with lambda
+
+    Returns:
+      advantages: calculated advantages shaped (actor_steps, num_agents)
+    """
+    values = jnp.append(values, 0)
+    # assert rewards.shape[0] + 1 == values.shape[0], (
+    #     'One more value needed; Eq. '
+    #     '(12) in PPO paper requires '
+    #     'V(s_{t+1}) for delta_t'
+    # )
+    advantages = []
+    gae = 0.0
+    for t in reversed(range(len(rewards))):
+        # Masks used to set next state value to 0 for terminal states.
+        value_diff = discount * values[t + 1] * terminal_masks[t] - values[t]
+        delta = rewards[t] + value_diff
+        # Masks[t] used to ensure that values before and after a terminal state
+        # are independent of each other.
+        gae = delta + discount * gae_param * terminal_masks[t] * gae
+        advantages.append(gae)
+    advantages = advantages[::-1]
+    return jnp.array(advantages)
 
 
 @jax.jit

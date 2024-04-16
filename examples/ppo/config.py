@@ -4,7 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class Config:
     env_name: str = "InvertedPendulum-v4"
-    seed: int = 1234
+    seed: int = 1434
     asynchronous = True
 
     hidden_dims: tuple = (256, 256)
@@ -18,7 +18,7 @@ class Config:
     precalc_advantages: bool = True
     use_combined_loss: bool = True
 
-    epochs: int = 10
+    epochs: int = 1
     n_envs: int = 1
     rollout_length: int = 128
 

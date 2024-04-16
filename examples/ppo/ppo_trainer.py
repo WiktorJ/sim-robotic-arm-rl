@@ -19,7 +19,7 @@ from examples.ppo.common import (
     MLP,
     Params,
     get_observations,
-    calculate_advantage,
+    calculate_advantage2,
     calculate_values,
 )
 from flax.training.train_state import TrainState
@@ -94,7 +94,7 @@ def train_step_jit(
     if precalc_advantages:
         advantages = batch.advantages
     else:
-        advantages = calculate_advantage(
+        advantages = calculate_advantage2(
             values, batch.rewards, batch.masks, gamma, lambda_
         )
 
