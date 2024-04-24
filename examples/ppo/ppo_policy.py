@@ -59,7 +59,7 @@ class PpoPolicy(nn.Module):
         advantages: jnp.ndarray,
         old_log_probs: jnp.ndarray,
         policy: TrainState,
-        prev_values: jnp.ndarray,
+        returns: jnp.ndarray,
         value_function: TrainState,
         combined_state: TrainState,
         use_combined_loss: bool,
@@ -69,12 +69,18 @@ class PpoPolicy(nn.Module):
         Tuple[TrainState, Mapping], Tuple[TrainState, TrainState, TrainState, Mapping]
     ]:
 
-        def loss_fn(params: Params):
-            dist = policy.apply_fn(params, observations, training=True)
+        def loss_fn(
+            params: Params,
+            obs: jnp.ndarray,
+            acts: jnp.ndarray,
+            oldlogpbs: jnp.ndarray,
+            advs: jnp.ndarray,
+        ):
+            dist = policy.apply_fn(params, obs, training=True)
             # actions = dist.sample(seed=seed)
-            log_probs = dist.log_prob(actions)
+            log_probs = dist.log_prob(acts)
 
-            ratio = jnp.exp(log_probs - old_log_probs)
+            ratio = jnp.exp(log_probs - oldlogpbs)
             ratio_clip = jnp.clip(ratio, 1 - epsilon, 1 + epsilon)
             # We cannot use dist.entropy, because there is no analytical
             # solution for tanh squashed distribution
@@ -82,7 +88,7 @@ class PpoPolicy(nn.Module):
             entropy = jnp.mean(-jnp.exp(log_probs) * log_probs)
             entropy_loss = entropy_coef * entropy
 
-            advantages_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            advantages_norm = (advs - advs.mean()) / (advs.std() + 1e-8)
             policy_loss1 = ratio * advantages_norm
             policy_loss2 = ratio_clip * advantages_norm
             policy_loss = jnp.minimum(policy_loss1, policy_loss2).mean()
@@ -102,9 +108,18 @@ class PpoPolicy(nn.Module):
                 "actions": actions.mean(),
             }
 
-        def combined_loss_fn(params: Params, targets: jnp.ndarray):
+        def combined_loss_fn(
+            params: Params,
+            targets: jnp.ndarray,
+            obs: jnp.ndarray,
+            acts: jnp.ndarray,
+            oldlogpbs: jnp.ndarray,
+            advs: jnp.ndarray,
+        ):
             policy_params, value_function_params = params
-            policy_loss, policy_info = loss_fn(policy_params)
+            policy_loss, policy_info = loss_fn(
+                policy_params, obs, acts, oldlogpbs, advs
+            )
             values = value_function.apply_fn(
                 value_function_params, observations, training=True
             )
@@ -114,11 +129,17 @@ class PpoPolicy(nn.Module):
                 **policy_info,
                 "value_function_loss": value_loss,
                 "values": values.mean(),
+                "returns": targets.mean(),
             }
 
         if use_combined_loss:
             grads, info = jax.grad(combined_loss_fn, has_aux=True)(
-                combined_state.params, advantages + prev_values
+                combined_state.params,
+                returns,
+                observations,
+                actions,
+                old_log_probs,
+                advantages,
             )
             new_combined_state = combined_state.apply_gradients(grads=grads)
             new_policy = policy.replace(

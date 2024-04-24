@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Config:
-    env_name: str = "InvertedPendulum-v4"
+    env_name: str = "Pusher-v4"
     seed: int = 1434
     asynchronous = True
 
@@ -18,15 +18,15 @@ class Config:
     precalc_advantages: bool = True
     use_combined_loss: bool = True
 
-    epochs: int = 1
-    n_envs: int = 1
-    rollout_length: int = 128
+    epochs: int = 5
+    n_envs: int = 2
+    rollout_length: int = 2028
 
     max_steps: int = 3_000_000
-    batch_size: int = 64
-    max_episode_steps: int = 128
+    batch_size: int = 128
+    max_episode_steps: int = 1000
 
-    eval_interval: int = 500
+    eval_interval: int = 10
     video_log_interval: int = 5
     num_eval_episodes: int = 1
 

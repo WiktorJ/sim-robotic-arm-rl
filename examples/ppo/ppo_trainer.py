@@ -19,8 +19,6 @@ from examples.ppo.common import (
     MLP,
     Params,
     get_observations,
-    calculate_advantage2,
-    calculate_values,
 )
 from flax.training.train_state import TrainState
 import jax.numpy as jnp
@@ -46,20 +44,19 @@ def sample_action(
         policy.params, observations, training=False, temperature=temperature
     )
     rng, seed = jax.random.split(seed)
-    return rng, dist.sample(seed=seed)
+    actions = dist.sample(seed=rng)
+    log_probs = dist.log_prob(actions)
+    return rng, actions, log_probs
 
 
 def update_value_function(
-    prev_values: jnp.ndarray,
-    advantages: jnp.ndarray,
+    returns: jnp.ndarray,
     observations: jnp.ndarray,
     value_function: TrainState,
 ):
-    targets = advantages + prev_values
-
     def loss_fn(params: Params):
         values = value_function.apply_fn(params, observations, training=True)
-        loss = ((values - targets) ** 2).mean()
+        loss = 0.5 * ((values - returns) ** 2).mean()
         return loss, {"value_function_loss": loss, "values": values.mean()}
 
     grads, info = jax.grad(loss_fn, has_aux=True)(value_function.params)
@@ -69,8 +66,6 @@ def update_value_function(
 @functools.partial(
     jax.jit,
     static_argnames=(
-        "gamma",
-        "lambda_",
         "epsilon",
         "entropy_coef",
         "precalc_advantages",
@@ -82,30 +77,33 @@ def train_step_jit(
     policy: TrainState,
     value_function: TrainState,
     combined_state: TrainState,
-    gamma: float,
-    lambda_: float,
     epsilon: float,
     entropy_coef: float,
-    precalc_advantages: bool = True,
     use_combined_loss: bool = False,
 ) -> Tuple[TrainState, TrainState, TrainState, Mapping]:
-    values = calculate_values(value_function, batch.observations)
 
-    if precalc_advantages:
-        advantages = batch.advantages
-    else:
-        advantages = calculate_advantage2(
-            values, batch.rewards, batch.masks, gamma, lambda_
+    if use_combined_loss:
+        policy, value_function, combined_state, info = PpoPolicy.update(
+            observations=batch.observations,
+            actions=batch.actions,
+            advantages=batch.advantages,
+            old_log_probs=batch.log_probs,
+            policy=policy,
+            returns=batch.returns,
+            value_function=value_function,
+            combined_state=combined_state,
+            use_combined_loss=use_combined_loss,
+            epsilon=epsilon,
+            entropy_coef=entropy_coef,
         )
-
-    if not use_combined_loss:
+    else:
         policy, policy_info = PpoPolicy.update(
             observations=batch.observations,
             actions=batch.actions,
-            advantages=advantages,
+            advantages=batch.advantages,
             old_log_probs=batch.log_probs,
             policy=policy,
-            prev_values=values,
+            returns=batch.returns,
             value_function=value_function,
             combined_state=combined_state,
             use_combined_loss=use_combined_loss,
@@ -113,23 +111,9 @@ def train_step_jit(
             entropy_coef=entropy_coef,
         )
         value_function, value_info = update_value_function(
-            values, advantages, batch.observations, value_function
+           batch.returns, batch.observations, value_function
         )
         info = {**policy_info, **value_info}
-    else:
-        policy, value_function, combined_state, info = PpoPolicy.update(
-            observations=batch.observations,
-            actions=batch.actions,
-            advantages=advantages,
-            old_log_probs=batch.log_probs,
-            policy=policy,
-            prev_values=values,
-            value_function=value_function,
-            combined_state=combined_state,
-            use_combined_loss=use_combined_loss,
-            epsilon=epsilon,
-            entropy_coef=entropy_coef,
-        )
     return policy, value_function, combined_state, info
 
 
@@ -197,10 +181,14 @@ class Trainer:
         )
 
     def sample_action(self, observation, temperature=1.0):
-        self.rng, action = sample_action(
+        self.rng, action, log_probs = sample_action(
             self.rng, self.policy, observation, temperature
         )
-        return action
+        return action, log_probs
+
+    def unscale_actions(self, scaled_action: jnp.ndarray, env):
+        low, high = env.action_space.low, env.action_space.high
+        return low + (0.5 * (scaled_action + 1.0) * (high - low))
 
     def train(self):
         run_neptune: Optional[Run] = None
@@ -211,7 +199,6 @@ class Trainer:
 
         logdir = f'{self.config.env_name}_{time.strftime("%d-%m-%Y_%H-%M-%S")}'
         summary_writer = tensorboard.SummaryWriter(f"{self.config.logs_root}/{logdir}")
-        (states, _), terminations = self.envs.reset(), [False] * self.config.n_envs
 
         observation_space = (
             self.envs.observation_space["observation"]
@@ -222,27 +209,34 @@ class Trainer:
         env_rollout_buffer = EnvRolloutBuffer(
             self.envs.action_space,
             observation_space,
-            self.config.rollout_length,
+            self.config.rollout_length + 1,
             self.config.n_envs,
         )
         # TODO: This might be misleading(?)
         # Just look at one representative env.
-        train_ep_length = 0
-        train_reward = 0
         for i in tqdm.tqdm(
             range(1, self.config.max_steps + 1),
             smoothing=0.1,
             disable=not self.config.tqdm,
         ):
             env_rollout_buffer.reset()
-            for _ in range(self.config.rollout_length):
+            (states, _), terminations = self.envs.reset(), [False] * self.config.n_envs
+            train_ep_length = 0
+            train_reward = 0
+            for j in range(self.config.rollout_length + 1):
                 observations = get_observations(states)
-                actions = self.sample_action(observations)
+                actions, log_probs = self.sample_action(observations)
+                unscaled_actions = self.unscale_actions(actions, self.envs)
                 states, rewards, terminations, truncations, infos = self.envs.step(
-                    actions
+                    unscaled_actions
                 )
                 env_rollout_buffer.insert(
-                    observations, actions, rewards, terminations, truncations
+                    observation=observations,
+                    action=actions,
+                    log_prob=log_probs,
+                    reward=rewards,
+                    termination=terminations,
+                    truncation=truncations,
                 )
 
                 truncated_or_terminated = truncations[0] or terminations[0]
@@ -257,6 +251,14 @@ class Trainer:
                     summary_writer.scalar(
                         f"training/reward",
                         train_reward,
+                        infos["total"]["timestaps"] if "total" in infos else i,
+                    )
+                    values = self.value_function.apply_fn(
+                        self.value_function.params, observations, training=False
+                    )
+                    summary_writer.scalar(
+                        f"training/final_value",
+                        values.mean(),
                         infos["total"]["timestaps"] if "total" in infos else i,
                     )
                     train_ep_length = 0
@@ -306,7 +308,9 @@ class Trainer:
                     observation = state["observation"]
                 else:
                     observation = state
-                action = self.sample_action(observation, temperature=0.0)
+                action = self.unscale_actions(
+                    self.sample_action(observation, temperature=0.0)[0], self.eval_env
+                )
                 state, reward, terminated, truncated, info = self.eval_env.step(action)
                 if log_video:
                     frames.append(self.eval_env.render() / 255)
@@ -323,14 +327,11 @@ class Trainer:
         return final_stats, frames
 
     def _train_step(self, env_rollout_buffer: EnvRolloutBuffer):
-        self.rng, seed = jax.random.split(self.rng)
         rollout_buffer = RolloutBuffer.create_from_env_rollouts(
             env_rollout_buffer,
-            self.policy,
             self.value_function,
             self.config.gamma,
             self.config.lambda_,
-            self.config.batch_size,
         )
         infos = []
         for epoch in range(self.config.epochs):
@@ -341,12 +342,9 @@ class Trainer:
                         self.policy,
                         self.value_function,
                         self.combined_state,
-                        self.config.gamma,
-                        self.config.lambda_,
                         self.config.epsilon,
                         self.config.entropy_coef,
-                        self.config.precalc_advantages,
-                        self.config.use_combined_loss
+                        self.config.use_combined_loss,
                     )
                 )
                 infos.append(info)
@@ -354,4 +352,7 @@ class Trainer:
 
 
 if __name__ == "__main__":
+    # jax.config.update("jax_debug_nans", True)
+    # jax.config.update("jax_log_compiles", True)
+    # jax.config.update("jax_disable_jit", True)
     Trainer(Config()).train()
