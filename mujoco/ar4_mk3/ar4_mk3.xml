@@ -1,0 +1,107 @@
+<mujoco model="xarm7">
+    <compiler angle="radian" autolimits="true" meshdir="assets"/>
+    <option integrator="implicitfast"/>
+
+    <asset>
+        <material name="white" rgba="1 1 1 1"/>
+        <material name="gray" rgba="0.753 0.753 0.753 1"/>
+        <material name="black" rgba="0.149 0.149 0.149 1"/>
+
+        <mesh file="base_link.STL"/>
+        <mesh file="link_1.STL"/>
+        <mesh file="link_2.STL"/>
+        <mesh file="link_3.STL"/>
+        <mesh file="link_4.STL"/>
+        <mesh file="link_5.STL"/>
+        <mesh file="link_6.STL"/>
+        <mesh file="gripper_base_link.stl"/>
+        <mesh file="gripper_jaw1_link.stl"/>
+
+    </asset>
+
+    <default>
+        <default class="ar4_mk3">
+             <geom type="mesh" material="white"/>
+        </default>
+    </default>
+
+    <worldbody>
+        <body name="base_link" pos="0 0 0" childclass="ar4_mk3">
+            <inertial pos="-4.6941E-06 0.054174 0.038824" mass="0.7102"
+                      fullinertia="0.0039943 0.0014946 0.0042554 3.697E-07 -5.7364E-08 -0.00036051"/>
+            <geom mesh="base_link"/>
+            <body name="link_1" pos="0 0 0">
+                <inertial pos="-0.022706 0.04294 -0.12205" mass="0.88065"
+                          fullinertia="0.0034 0.0041778 0.0027077 0.00042296 -0.00089231 0.0010848"/>
+                <geom type="mesh" mesh="link_1" contype="1" conaffinity="1" rgba="1 1 0 1"/>
+                <joint name="joint_1" type="hinge" pos="0 0 0" axis="0 0 1" limited="true"
+                       range="-2.96705 2.96705"/>
+                <body name="link_2" pos="0 0 0">
+                    <inertial pos="0.064818 -0.11189 -0.038671" mass="0.57738"
+                              fullinertia="0.0047312 0.0020836 0.0056129 0.0022624 0.00032144 -0.00056569"/>
+                    <geom type="mesh" mesh="link_2"/>
+                    <joint name="joint_2" type="hinge" pos="0 0.064146 -0.16608" axis="0 0 -1" limited="true"
+                           range="-0.73304 1.5708"/>
+                    <body name="link_3" pos="0 0 0">
+                        <inertial pos="-0.00029765 -0.023661 -0.0019125" mass="0.1787"
+                                  fullinertia="0.0001685 0.00012865 0.00020744 -2.7713E-05 5.6885E-06 2.9256E-05"/>
+                        <geom type="mesh" mesh="link_3"/>
+                        <joint name="joint_3" type="hinge" pos="0.1525 -0.26414 0" axis="0 0 -1" limited="true"
+                               range="-1.55334 0.907571"/>
+                        <body name="link_4" pos="0 0 0">
+                            <inertial pos="-0.0016798 -0.00057319 -0.074404" mass="0.34936"
+                                      fullinertia="0.0030532 0.0031033 0.00022264 -1.8615E-05 -7.0047E-05 -2.3301E-05"/>
+                            <geom mesh="link_4"/>
+                            <joint name="joint_4" type="hinge" pos="0 0 0.00675" axis="0 0 -1" limited="true"
+                                   range="-2.87979 2.87979"/>
+                            <body name="link_5" pos="0 0 0">
+                                <inertial pos="0.0015066 -1.3102E-05 -0.012585" mass="0.11562"
+                                          fullinertia="5.5035E-05 8.2921E-05 5.2518E-05 -1.019E-08 -2.6243E-06 1.4437E-08"/>
+                                <geom mesh="link_5"/>
+                                <joint name="joint_5" type="hinge" pos="0 0 -0.22225" axis="1 0 0" limited="true"
+                                       range="-1.83259 1.83259"/>
+                                <body name="link_6" pos="0 0 0">
+                                    <inertial pos="2.9287E-10 -1.6472E-09 0.0091432" mass="0.013863"
+                                              fullinertia="1.3596E-06 1.7157E-06 2.4332E-06 3.0585E-13 5.7102E-14 6.3369E-09"/>
+                                    <geom mesh="link_6"/>
+                                    <joint name="joint_6" type="hinge" pos="-0.000294 0 0.02117" axis="0 0 1"
+                                           limited="true"
+                                           range="-2.70676 2.70676"/>
+                                    <body name="gripper_base_link" pos="0 0 0">
+                                        <inertial pos="-0.00073621 -0.02341392 -0.00435302" mass="0.08"
+                                                  fullinertia="0.00002375 0.00004082 0.00004254 0.00000002 -0.00000017 -0.00000029"/>
+                                        <geom mesh="gripper_base_link"/>
+                                        <joint name="gripper_base_join" type="hinge" pos="0 0 0.016"
+                                               limited="true"
+                                               range="-2.70676 2.70676"/>
+                                        <body name="gripper_jaw1_link" pos="0 0 0">
+                                            <inertial pos="-0.00435839 -0.00469536 0.00757141" mass="0.01"
+                                                      fullinertia="0.00000123 0.00000115 0.00000102 -0.00000004 0.00000012 0.00000016"/>
+                                            <geom mesh="gripper_jaw1_link"/>
+                                            <joint name="gripper_jaw1_joint" type="hinge" pos="0.0 -0.036 -0.0155" axis="1 0 0"
+                                                   limited="true"
+                                                   range="-0.014 0"/>
+                                        </body>
+                                    </body>
+                                </body>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+        </body>
+    </worldbody>
+
+  <actuator>
+    <general name="act1" joint="joint_1" class="ar4_mk3"/>
+    <general name="act2" joint="joint_2" class="ar4_mk3"/>
+    <general name="act3" joint="joint_3" class="ar4_mk3"/>
+    <general name="act4" joint="joint_4" class="ar4_mk3"/>
+    <general name="act5" joint="joint_5" class="ar4_mk3"/>
+    <general name="act6" joint="joint_6" class="ar4_mk3"/>
+    <general name="act7" joint="gripper_base_join" class="ar4_mk3"/>
+      <general name="act8" joint="gripper_jaw1_joint" class="ar4_mk3"/>
+  </actuator>
+
+
+</mujoco>
